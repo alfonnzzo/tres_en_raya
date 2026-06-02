@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ta te ti  - Modelo TensorFlow</title>
+  <style>
+    :root {
+      --color-text-primary: #000000;
+      --color-text-secondary: #555555;
+      --color-background-primary: #ffffff;
+      --color-background-secondary: #f4f4f4;
+      --border-radius-md: 4px;
+    }
+
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      background-color: var(--color-background-primary);
+      margin: 0;
+      display: flex;
+      justify-content: center;
+    }
+
+    h2.sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0,0,0,0);
+    }
+
+    .ttt-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.5rem;
+      padding: 2rem 0;
+    }
+
+    .info-line {
+      font-size: 16px;
+      color: var(--color-text-primary);
+    }
+
+    .status {
+      font-size: 1.2em;
+      font-weight: bold;
+      min-height: 28px;
+      color: var(--color-text-primary);
+    }
+
+    .board {
+      display: grid;
+      grid-template-columns: repeat(3, 100px);
+      grid-template-rows: repeat(3, 100px);
+      gap: 0; 
+      margin: 1rem 0;
+    }
+
+    .cell {
+      width: 100px;
+      height: 100px;
+      font-size: 4.5rem;
+      font-family: Arial, sans-serif;
+      font-weight: bold;
+      color: #000; 
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      line-height: 1;
+    }
+
+    .cell:disabled {
+      cursor: default;
+    }
+
+    .cell:nth-child(3n+1), 
+    .cell:nth-child(3n+2) {
+      border-right: 8px solid #000;
+    }
+    .cell:nth-child(-n+6) {
+      border-bottom: 8px solid #000;
+    }
+
+    .controls {
+      display: flex;
+      gap: 8px;
+    }
+
+    button:not(.cell) {
+      padding: 8px 16px;
+      font-size: 1rem;
+      cursor: pointer;
+      border: 1px solid var(--color-text-secondary);
+      background: var(--color-background-primary);
+      border-radius: var(--border-radius-md);
+      transition: background 0.2s;
+    }
+
+    button:not(.cell):hover {
+      background: var(--color-background-secondary);
+    }
+
+    .stats-row {
+      display: flex;
+      gap: 16px;
+      margin-top: 1rem;
+    }
+
+    .stat {
+      background: var(--color-background-secondary);
+      border-radius: var(--border-radius-md);
+      padding: 10px 20px;
+      text-align: center;
+      min-width: 80px;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: var(--color-text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .stat-val {
+      font-size: 1.5em;
+      font-weight: bold;
+      color: var(--color-text-primary);
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="ttt-wrap">
+  <h2 class="sr-only">Juego de Tic Tac Toe contra IA entrenada con TensorFlow</h2>
+  <p class="info-line">Vos sos <strong>x</strong> &nbsp;|&nbsp; La máquina es <strong>o</strong></p>
+  <div class="status playing" id="status">Tu turno</div>
+  
+  <div class="board" id="board">
+    <button class="cell" data-i="0"></button><button class="cell" data-i="1"></button><button class="cell" data-i="2"></button>
+    <button class="cell" data-i="3"></button><button class="cell" data-i="4"></button><button class="cell" data-i="5"></button>
+    <button class="cell" data-i="6"></button><button class="cell" data-i="7"></button><button class="cell" data-i="8"></button>
+  </div>
+  
+  <div class="controls">
+    <button onclick="resetGame()">Nuevo juego</button>
+  </div>
+  
+  <div class="stats-row">
+    <div class="stat"><div class="stat-label">Victorias</div><div class="stat-val" id="wins">0</div></div>
+    <div class="stat"><div class="stat-label">Derrotas</div><div class="stat-val" id="losses">0</div></div>
+    <div class="stat"><div class="stat-label">Empates</div><div class="stat-val" id="draws">0</div></div>
+  </div>
+  
+  <p style="font-size:12px;color:var(--color-text-secondary);max-width:360px;text-align:center;margin-top:1rem;" id="model-status">
+    Cargando modelo TensorFlow... (requiere <code>model/ttt_model.json</code>)
+  </p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.0.0/dist/tf.min.js"></script>
+<script>
+let model = null;
+let board = [0,0,0,0,0,0,0,0,0];
+let active = false; 
+let stats = {wins:0,losses:0,draws:0};
+
+const wins=[
+  [0,1,2],[3,4,5],[6,7,8],
+  [0,3,6],[1,4,7],[2,5,8],
+  [0,4,8],[2,4,6]
+];
+
+function checkWinner(b){
+  for(const [a,c,d] of wins) if(b[a]&&b[a]===b[c]&&b[c]===b[d]) return b[a];
+  return 0;
+}
+
+function isFull(b){ return b.every(v=>v!==0); }
+
+function setStatus(txt, cls=''){
+  const el=document.getElementById('status');
+  el.textContent=txt; 
+  el.className='status '+(cls||'playing');
+}
+
+function renderBoard(){
+  document.querySelectorAll('.cell').forEach((c,i)=>{
+    const v=board[i];
+    c.textContent=v===1?'x':v===-1?'o':'';
+    c.disabled = active || v!==0;
+  });
+}
+
+function setCellsDisabled(val){
+  document.querySelectorAll('.cell').forEach(c=>{
+    const i=parseInt(c.dataset.i);
+    c.disabled = val || board[i]!==0;
+  });
+}
+
+async function machineMove(){
+  setStatus('Máquina pensando...');
+  setCellsDisabled(true);
+  await new Promise(r=>setTimeout(r,500));
+
+  let move=-1;
+  if(model){
+    const t=tf.tensor([board],[1,9]);
+    const pred=model.predict(t);
+    const data=await pred.data();
+    t.dispose(); pred.dispose();
+    let best=-Infinity;
+    for(let i=0;i<9;i++) if(board[i]===0&&data[i]>best){best=data[i];move=i;}
+  }
+
+  if(move===-1){
+    const empty=board.map((v,i)=>v===0?i:-1).filter(i=>i!==-1);
+    if(empty.length) move=empty[Math.floor(Math.random()*empty.length)];
+  }
+  if(move!==-1) board[move]=-1;
+
+  renderBoard();
+  const w=checkWinner(board);
+  if(w===-1){
+    setStatus('La máquina gana!','lose');
+    stats.losses++; saveStats(); active=true; return;
+  }
+  if(isFull(board)){
+    setStatus('Empate!','draw');
+    stats.draws++; saveStats(); active=true; return;
+  }
+
+  active=false;
+  setCellsDisabled(false);
+  setStatus('Tu turno');
+}
+
+async function playerMove(i){
+  if(active||board[i]!==0) return;
+  active=true;
+  board[i]=1;
+  renderBoard();
+
+  const w=checkWinner(board);
+  if(w===1){
+    setStatus('Ganaste!','win');
+    stats.wins++; saveStats(); return;
+  }
+  if(isFull(board)){
+    setStatus('Empate!','draw');
+    stats.draws++; saveStats(); return;
+  }
+
+  await machineMove();
+}
+
+function resetGame(){
+  board=[0,0,0,0,0,0,0,0,0];
+  active=false;
+  setStatus('Tu turno');
+  renderBoard();
+}
+
+function saveStats(){
+  document.getElementById('wins').textContent=stats.wins;
+  document.getElementById('losses').textContent=stats.losses;
+  document.getElementById('draws').textContent=stats.draws;
+}
+
+document.querySelectorAll('.cell').forEach(c=>{
+  c.addEventListener('click',()=>playerMove(parseInt(c.dataset.i)));
+});
+
+tf.ready().then(async()=>{
+  try{
+    model=await tf.loadLayersModel('model/ttt_model.json');
+    document.getElementById('model-status').textContent='Modelo cargado correctamente.';
+    console.log('Modelo cargado:', model);
+  }catch(e){
+    document.getElementById('model-status').textContent=
+      'Modelo no encontrado — la IA usa movimientos aleatorios como fallback. Coloca ttt_model.json en /model/.';
+    model=null;
+    console.error('Error cargando el modelo:', e);
+  }
+  resetGame();
+});
+</script>
+</body>
+</html>
